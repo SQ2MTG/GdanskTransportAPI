@@ -1,0 +1,5 @@
+{
+  "name": "Gdansk Live Public Transport Map",
+  "description": "An interactive map that displays the live positions of public transport vehicles (buses and trams) in Gdańsk, Poland. Data is updated in real-time from the Gdańsk Open Data portal.",
+  "requestFramePermissions": []
+}
