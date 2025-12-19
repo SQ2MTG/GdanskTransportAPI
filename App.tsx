@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import { Vehicle, RoutesApiResponse, RawVehicle, ApiResponse } from './types';
 
@@ -10,6 +10,7 @@ const ROUTES_API_URL = 'https://ckan.multimediagdansk.pl/dataset/c24aa637-3619-4
 const GDANSK_CENTER: L.LatLngExpression = [54.372158, 18.638306];
 const REFRESH_INTERVAL = 5000; // 5 seconds
 const DELAY_THRESHOLD_SECONDS = 120; // 2 minutes
+const HISTORY_WINDOW_MS = 60 * 60 * 1000; // 60 minutes
 
 // --- Helper Types ---
 type IconShape = 'vehicle' | 'dot' | 'pin';
@@ -28,6 +29,12 @@ interface Filters {
     line: string;
     type: VehicleTypeFilter;
     delay: DelayFilter;
+}
+
+interface HistoryPoint {
+  lat: number;
+  lon: number;
+  timestamp: number;
 }
 
 // --- Robust Fetching Logic ---
@@ -81,9 +88,11 @@ interface VehicleMarkerProps {
   vehicle: Vehicle;
   color: string;
   iconShape: IconShape;
+  onSelect: (id: number) => void;
+  onDeselect: (id: number) => void;
 }
 
-const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape }) => {
+const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape, onSelect, onDeselect }) => {
   const icon = useMemo(() => {
     const isTram = vehicle.vehicleType === 'TRAM';
     let svg: string;
@@ -166,7 +175,14 @@ const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape
   }, [vehicle.generated]);
 
   return (
-    <Marker position={[vehicle.lat, vehicle.lon]} icon={icon}>
+    <Marker 
+      position={[vehicle.lat, vehicle.lon]} 
+      icon={icon}
+      eventHandlers={{
+        click: () => onSelect(vehicle.vehicleId),
+        popupclose: () => onDeselect(vehicle.vehicleId)
+      }}
+    >
       <Popup>
         <div className="font-sans text-gray-800 dark:text-gray-300">
           <h3 className="font-bold text-lg mb-1 text-gray-900 dark:text-white">
@@ -187,6 +203,9 @@ const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape
           <p className="text-gray-600 dark:text-gray-400 text-sm mt-1 border-t border-gray-200 dark:border-gray-600 pt-1">
             <span className="font-semibold">Ostatnia aktualizacja:</span> {lastUpdateStr}
           </p>
+          <p className="text-xs text-blue-500 mt-2 italic">
+            Ślad trasy widoczny na mapie
+          </p>
         </div>
       </Popup>
     </Marker>
@@ -202,6 +221,10 @@ const App: React.FC = () => {
   const [initError, setInitError] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const isInitialLoad = useRef(true);
+
+  // History state: Map<VehicleID, Array of Points>
+  const [vehicleHistory, setVehicleHistory] = useState<Map<number, HistoryPoint[]>>(new Map());
+  const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
 
   const [filters, setFilters] = useState<Filters>({
     line: '',
@@ -295,6 +318,34 @@ const App: React.FC = () => {
       }));
 
       setVehicles(enrichedVehicles);
+
+      // Update History logic
+      setVehicleHistory(prevHistory => {
+        const newHistory = new Map(prevHistory);
+        const now = Date.now();
+        
+        enrichedVehicles.forEach(v => {
+          const points = newHistory.get(v.vehicleId) || [];
+          const lastPoint = points[points.length - 1];
+
+          // Only add point if vehicle has moved (lat or lon changed)
+          // or if it's the first point.
+          if (!lastPoint || lastPoint.lat !== v.lat || lastPoint.lon !== v.lon) {
+             const newPoint: HistoryPoint = { lat: v.lat, lon: v.lon, timestamp: now };
+             // Filter points older than HISTORY_WINDOW_MS
+             const updatedPoints = [...points, newPoint].filter(p => now - p.timestamp <= HISTORY_WINDOW_MS);
+             newHistory.set(v.vehicleId, updatedPoints);
+          }
+        });
+
+        // Optional: Cleanup history for vehicles no longer present in API could be done here,
+        // but keeping them allows seeing history if they briefly disconnect.
+        // We could run a periodic cleanup for very old keys.
+        
+        return newHistory;
+      });
+
+
       if (data.lastUpdate) {
         setLastUpdate(data.lastUpdate);
       }
@@ -328,6 +379,16 @@ const App: React.FC = () => {
     setFilters(prev => ({...prev, [key]: value}));
   }
 
+  const handleVehicleSelect = (id: number) => {
+    setSelectedVehicleId(id);
+  };
+
+  const handleVehicleDeselect = (id: number) => {
+    if (selectedVehicleId === id) {
+      setSelectedVehicleId(null);
+    }
+  };
+
   const filteredVehicles = useMemo(() => {
     const lines = filters.line
       .split(',')
@@ -345,10 +406,6 @@ const App: React.FC = () => {
           const vehicleTime = new Date(v.generated).getTime();
           return (now - vehicleTime) <= MAX_DATA_AGE_MS;
         } catch (e) {
-          // If date parsing fails, keep it or discard? Safest to discard if strict, or keep if lenient.
-          // Requirement is strict "remove if > 5 min", so if we can't parse, we assume invalid/old?
-          // Let's assume valid data generally, but if parse fails, maybe keep to show *something* or filter.
-          // Let's filter out to be safe.
           return false; 
         }
       })
@@ -541,6 +598,15 @@ const App: React.FC = () => {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
         )}
+        
+        {/* Render Trace for selected vehicle */}
+        {selectedVehicleId && vehicleHistory.has(selectedVehicleId) && (
+          <Polyline 
+            positions={vehicleHistory.get(selectedVehicleId)!.map(p => [p.lat, p.lon])} 
+            pathOptions={{ color: '#8b5cf6', weight: 4, opacity: 0.8 }} // Purple color for trace
+          />
+        )}
+
         {filteredVehicles.map(vehicle => {
           const isTram = vehicle.vehicleType === 'TRAM';
           return (
@@ -549,6 +615,8 @@ const App: React.FC = () => {
               vehicle={vehicle}
               color={isTram ? settings.tramColor : settings.busColor}
               iconShape={isTram ? settings.tramIconShape : settings.busIconShape}
+              onSelect={handleVehicleSelect}
+              onDeselect={handleVehicleDeselect}
             />
           );
         })}
