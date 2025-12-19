@@ -6,7 +6,9 @@ This project is an interactive map that displays the live positions of public tr
 
 ## English Version 🇬🇧
 
-![Print screen](https://github.com/SQ2MTG/GdanskTransportAPI/blob/main/Przechwytywanie2.PNG)
+### 🚀 Live Demo
+
+**(Link to the live application would be here)**
 
 ### ✨ Key Features
 
@@ -44,7 +46,9 @@ This project is an interactive map that displays the live positions of public tr
 
 ## Wersja Polska 🇵🇱
 
-![Print screen](https://github.com/SQ2MTG/GdanskTransportAPI/blob/main/Przechwytywanie2.PNG)
+### 🚀 Demo na Żywo
+
+**(Tutaj znajdowałby się link do działającej aplikacji)**
 
 ### ✨ Kluczowe Funkcjonalności
 
