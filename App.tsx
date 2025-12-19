@@ -155,6 +155,16 @@ const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape
   const delayColor =
     delayInMinutes > 2 ? 'text-red-500' : delayInMinutes < -2 ? 'text-green-500' : 'text-gray-700 dark:text-gray-400';
 
+  const lastUpdateStr = useMemo(() => {
+    if (!vehicle.generated) return 'Brak danych';
+    try {
+      const date = new Date(vehicle.generated);
+      return date.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch (e) {
+      return vehicle.generated;
+    }
+  }, [vehicle.generated]);
+
   return (
     <Marker position={[vehicle.lat, vehicle.lon]} icon={icon}>
       <Popup>
@@ -173,6 +183,9 @@ const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape
           </p>
           <p className={delayColor}>
             <span className="font-semibold">Status:</span> {delayText}
+          </p>
+          <p className="text-gray-600 dark:text-gray-400 text-sm mt-1 border-t border-gray-200 dark:border-gray-600 pt-1">
+            <span className="font-semibold">Ostatnia aktualizacja:</span> {lastUpdateStr}
           </p>
         </div>
       </Popup>
@@ -265,10 +278,6 @@ const App: React.FC = () => {
 
   const fetchVehicles = useCallback(async () => {
     // We can fetch vehicles even if route info fails, but mapping types might be off.
-    // However, the original logic waited for routeInfo. Let's keep it safe but allow retry.
-    // Ideally, we want to proceed even if routeInfo is empty (vehicles will just default to BUS),
-    // but the `routeInfo.size > 0` check in useEffect prevents this.
-    // Let's rely on the initError state to block if routes fail completely.
     if (routeInfo.size === 0 && !initError && isLoading) return; 
 
     if (isInitialLoad.current) {
@@ -304,7 +313,6 @@ const App: React.FC = () => {
   }, [routeInfo, initError, isLoading]);
 
   useEffect(() => {
-    // Only start interval if we have route info or if we decided to proceed without it (not implemented here for simplicity)
     if (routeInfo.size > 0) {
       fetchVehicles();
       const intervalId = setInterval(fetchVehicles, REFRESH_INTERVAL);
@@ -325,8 +333,25 @@ const App: React.FC = () => {
       .split(',')
       .map(l => l.trim().toUpperCase())
       .filter(l => l !== '');
+      
+    const now = Date.now();
+    const MAX_DATA_AGE_MS = 5 * 60 * 1000; // 5 minutes
 
     return vehicles
+      .filter(v => {
+        // Filter out stale vehicles
+        if (!v.generated) return false;
+        try {
+          const vehicleTime = new Date(v.generated).getTime();
+          return (now - vehicleTime) <= MAX_DATA_AGE_MS;
+        } catch (e) {
+          // If date parsing fails, keep it or discard? Safest to discard if strict, or keep if lenient.
+          // Requirement is strict "remove if > 5 min", so if we can't parse, we assume invalid/old?
+          // Let's assume valid data generally, but if parse fails, maybe keep to show *something* or filter.
+          // Let's filter out to be safe.
+          return false; 
+        }
+      })
       .filter(v => {
         if (filters.type === 'ALL') return true;
         return v.vehicleType === filters.type;

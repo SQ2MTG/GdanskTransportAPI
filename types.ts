@@ -9,6 +9,7 @@ export interface Vehicle {
   lon: number;
   bearing: number;
   delay: number;
+  generated: string;
 }
 
 export interface RawVehicle {
@@ -21,6 +22,7 @@ export interface RawVehicle {
   lon: number;
   bearing: number;
   delay: number;
+  generated: string;
 }
 
 
