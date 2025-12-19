@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { Vehicle, RoutesApiResponse, RawVehicle, ApiResponse } from './types';
 
@@ -109,10 +109,9 @@ interface VehicleMarkerProps {
   color: string;
   iconShape: IconShape;
   onSelect: (id: number) => void;
-  onDeselect: (id: number) => void;
 }
 
-const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape, onSelect, onDeselect }) => {
+const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape, onSelect }) => {
   const icon = useMemo(() => {
     const isTram = vehicle.vehicleType === 'TRAM';
     let svg: string;
@@ -174,6 +173,28 @@ const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape
     });
   }, [vehicle.bearing, vehicle.vehicleType, color, iconShape, vehicle.routeShortName]);
 
+  return (
+    <Marker 
+      position={[vehicle.lat, vehicle.lon]} 
+      icon={icon}
+      eventHandlers={{
+        click: (e) => {
+          L.DomEvent.stopPropagation(e.originalEvent);
+          onSelect(vehicle.vehicleId);
+        }
+      }}
+    />
+  );
+};
+
+const MapClickHandler = ({ onMapClick }: { onMapClick: () => void }) => {
+  useMapEvents({
+    click: () => onMapClick(),
+  });
+  return null;
+};
+
+const VehicleDetailPanel: React.FC<{ vehicle: Vehicle; onClose: () => void; settings: Settings }> = ({ vehicle, onClose, settings }) => {
   const delayInMinutes = Math.round(vehicle.delay / 60);
   const delayText =
     delayInMinutes > 0
@@ -182,7 +203,7 @@ const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape
       ? `${-delayInMinutes} min przyspieszenia`
       : 'punktualnie';
   const delayColor =
-    delayInMinutes > 2 ? 'text-red-500' : delayInMinutes < -2 ? 'text-green-500' : 'text-gray-700 dark:text-gray-400';
+    delayInMinutes > 2 ? 'text-red-600 dark:text-red-400' : delayInMinutes < -2 ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400';
 
   const lastUpdateStr = useMemo(() => {
     if (!vehicle.generated) return 'Brak danych';
@@ -195,42 +216,67 @@ const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape
   }, [vehicle.generated]);
 
   return (
-    <Marker 
-      position={[vehicle.lat, vehicle.lon]} 
-      icon={icon}
-      eventHandlers={{
-        click: () => onSelect(vehicle.vehicleId),
-        popupclose: () => onDeselect(vehicle.vehicleId)
-      }}
-    >
-      <Popup>
-        <div className="font-sans text-gray-800 dark:text-gray-300">
-          <h3 className="font-bold text-lg mb-1 text-gray-900 dark:text-white">
-            {vehicle.vehicleType === 'TRAM' ? 'Tramwaj' : 'Autobus'} Linii: {vehicle.routeShortName}
-          </h3>
-          <p>
-            <span className="font-semibold">Kierunek:</span> {vehicle.headsign}
-          </p>
-          <p>
-            <span className="font-semibold">Pojazd:</span> {vehicle.vehicleCode}
-          </p>
-          <p>
-            <span className="font-semibold">Prędkość:</span> {vehicle.speed} km/h
-          </p>
-          <p className={delayColor}>
-            <span className="font-semibold">Status:</span> {delayText}
-          </p>
-          <p className="text-gray-600 dark:text-gray-400 text-sm mt-1 border-t border-gray-200 dark:border-gray-600 pt-1">
-            <span className="font-semibold">Ostatnia aktualizacja:</span> {lastUpdateStr}
-          </p>
-          <p className="text-xs text-blue-500 mt-2 italic">
-            Ślad trasy widoczny na mapie
-          </p>
+    <div className="absolute bottom-6 left-6 z-[1000] w-80 max-w-[calc(100vw-3rem)] bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm shadow-2xl rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden transition-all duration-300 animate-in slide-in-from-bottom-4 fade-in">
+        {/* Header Color Strip */}
+        <div className="h-2 w-full" style={{ backgroundColor: vehicle.vehicleType === 'TRAM' ? settings.tramColor : settings.busColor }} />
+        
+        <div className="p-5 relative">
+            <button 
+                onClick={onClose}
+                className="absolute top-2 right-2 p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                aria-label="Zamknij"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+            </button>
+
+            <div className="flex items-baseline justify-between mb-2">
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {vehicle.routeShortName}
+                </h3>
+                <span className="text-sm font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    {vehicle.vehicleType === 'TRAM' ? 'Tramwaj' : 'Autobus'}
+                </span>
+            </div>
+
+            <div className="space-y-3">
+                <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-semibold">Kierunek</p>
+                    <p className="text-lg font-medium text-gray-800 dark:text-gray-200 leading-tight">{vehicle.headsign}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-gray-50 dark:bg-gray-700/50 p-2 rounded-lg">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-semibold">Prędkość</p>
+                        <p className="text-base font-semibold text-gray-800 dark:text-gray-200">{vehicle.speed} km/h</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700/50 p-2 rounded-lg">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-semibold">Numer boczny</p>
+                        <p className="text-base font-semibold text-gray-800 dark:text-gray-200">{vehicle.vehicleCode}</p>
+                    </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700">
+                     <div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-semibold mb-0.5">Status</p>
+                        <p className={`font-bold ${delayColor}`}>{delayText}</p>
+                     </div>
+                     <div className="text-right">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-semibold mb-0.5">Aktualizacja</p>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 font-mono">{lastUpdateStr}</p>
+                     </div>
+                </div>
+            </div>
+            
+            <div className="mt-3 text-xs text-center text-blue-500/80 dark:text-blue-400/80 italic">
+               Trasa pojazdu jest wyświetlana na mapie
+            </div>
         </div>
-      </Popup>
-    </Marker>
+    </div>
   );
 };
+
 
 const App: React.FC = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -469,12 +515,6 @@ const App: React.FC = () => {
     setSelectedVehicleId(id);
   };
 
-  const handleVehicleDeselect = (id: number) => {
-    if (selectedVehicleId === id) {
-      setSelectedVehicleId(null);
-    }
-  };
-
   const filteredVehicles = useMemo(() => {
     const lines = filters.line
       .split(',')
@@ -514,6 +554,10 @@ const App: React.FC = () => {
 
   const tramCount = useMemo(() => filteredVehicles.filter(v => v.vehicleType === 'TRAM').length, [filteredVehicles]);
   const busCount = useMemo(() => filteredVehicles.filter(v => v.vehicleType === 'BUS').length, [filteredVehicles]);
+
+  const selectedVehicle = useMemo(() => {
+     return vehicles.find(v => v.vehicleId === selectedVehicleId);
+  }, [vehicles, selectedVehicleId]);
 
   const FilterButton = ({
     label,
@@ -674,7 +718,17 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {selectedVehicle && (
+        <VehicleDetailPanel 
+            vehicle={selectedVehicle} 
+            onClose={() => setSelectedVehicleId(null)} 
+            settings={settings}
+        />
+      )}
+
       <MapContainer center={GDANSK_CENTER} zoom={12} scrollWheelZoom={true}>
+        <MapClickHandler onMapClick={() => setSelectedVehicleId(null)} />
+
         {settings.isDarkMode ? (
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
@@ -704,7 +758,6 @@ const App: React.FC = () => {
               color={isTram ? settings.tramColor : settings.busColor}
               iconShape={isTram ? settings.tramIconShape : settings.busIconShape}
               onSelect={handleVehicleSelect}
-              onDeselect={handleVehicleDeselect}
             />
           );
         })}
