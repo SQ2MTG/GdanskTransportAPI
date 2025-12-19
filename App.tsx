@@ -1,15 +1,11 @@
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { Vehicle, RoutesApiResponse, RawVehicle, ApiResponse } from './types';
 
-// The original API endpoints are blocked by CORS policy.
-// We use a CORS proxy to bypass this browser limitation.
-const PROXY_URL = 'https://api.allorigins.win/raw?url=';
-const VEHICLES_API_URL = `${PROXY_URL}${encodeURIComponent('https://ckan2.multimediagdansk.pl/gpsPositions?v=2')}`;
-const ROUTES_API_URL = `${PROXY_URL}${encodeURIComponent('https://ckan.multimediagdansk.pl/dataset/c24aa637-3619-4dc2-a171-a23eec8f2172/resource/22313c56-5acf-41c7-a5fd-dc5dc72b3851/download/routes.json')}`;
-
+// Raw API URLs
+const VEHICLES_API_URL = 'https://ckan2.multimediagdansk.pl/gpsPositions?v=2';
+const ROUTES_API_URL = 'https://ckan.multimediagdansk.pl/dataset/c24aa637-3619-4dc2-a171-a23eec8f2172/resource/22313c56-5acf-41c7-a5fd-dc5dc72b3851/download/routes.json';
 
 const GDANSK_CENTER: L.LatLngExpression = [54.372158, 18.638306];
 const REFRESH_INTERVAL = 5000; // 5 seconds
@@ -34,24 +30,49 @@ interface Filters {
     delay: DelayFilter;
 }
 
-// Helper function to fetch data with retries on server errors
-const fetchWithRetry = async (url: string, retries = 2, delay = 500): Promise<Response> => {
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const response = await fetch(url);
-      if (response.ok || response.status < 500) {
-        return response;
-      }
-      console.warn(`Attempt ${i + 1} for ${url} failed with server error: ${response.status}. Retrying...`);
-    } catch (error) {
-      console.warn(`Attempt ${i + 1} for ${url} failed with a network error. Retrying...`, error);
+// --- Robust Fetching Logic ---
+
+/**
+ * Attempts to fetch JSON data from a URL using multiple strategies:
+ * 1. Direct fetch (best if CORS is supported)
+ * 2. Primary CORS Proxy (AllOrigins)
+ * 3. Secondary CORS Proxy (CorsProxy.io)
+ */
+const robustFetch = async (url: string): Promise<any> => {
+  // Strategy 1: Direct Fetch
+  try {
+    const response = await fetch(url);
+    if (response.ok) {
+      return await response.json();
     }
-    
-    if (i < retries) {
-      await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
-    }
+  } catch (error) {
+    console.warn(`Direct fetch failed for ${url}. Trying proxy...`);
   }
-  throw new Error(`Failed to fetch from ${url} after ${retries + 1} attempts.`);
+
+  // Strategy 2: AllOrigins Proxy
+  try {
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    const response = await fetch(proxyUrl);
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    console.warn(`AllOrigins proxy failed for ${url}. Trying backup proxy...`);
+  }
+
+  // Strategy 3: CorsProxy.io
+  try {
+    // Note: CorsProxy.io usage pattern is appending the URL
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+    const response = await fetch(proxyUrl);
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    console.error(`All fetch strategies failed for ${url}`, error);
+  }
+
+  throw new Error(`Failed to fetch data from ${url} after multiple attempts.`);
 };
 
 
@@ -164,6 +185,7 @@ const App: React.FC = () => {
   const [routeInfo, setRouteInfo] = useState<Map<string, 'BUS' | 'TRAM'>>(new Map());
   const [lastUpdate, setLastUpdate] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const isInitialLoad = useRef(true);
@@ -187,7 +209,6 @@ const App: React.FC = () => {
       const savedSettings = localStorage.getItem('gdanskTransportMapSettings');
       if (savedSettings) {
         const parsed = JSON.parse(savedSettings);
-        // Ensure isDarkMode is a boolean
         if (typeof parsed.isDarkMode !== 'boolean') {
           parsed.isDarkMode = defaultSettings.isDarkMode;
         }
@@ -220,10 +241,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const fetchRouteInfo = async () => {
       try {
-        const response = await fetchWithRetry(ROUTES_API_URL);
-        if (!response.ok) throw new Error(`Błąd HTTP: ${response.status}`);
-        
-        const data: RoutesApiResponse = await response.json();
+        const data: RoutesApiResponse = await robustFetch(ROUTES_API_URL);
         const routes = Object.values(data)[0]?.routes;
         if (!routes) throw new Error("Nieprawidłowy format danych o liniach.");
 
@@ -238,7 +256,7 @@ const App: React.FC = () => {
         setRouteInfo(newRouteInfo);
       } catch (error) {
         console.error("Błąd krytyczny podczas pobierania informacji o liniach:", error);
-        setInitError("Nie można załadować kluczowych informacji o liniach. Odśwież stronę, aby spróbować ponownie.");
+        setInitError("Nie można załadować kluczowych informacji o liniach. Sprawdź połączenie.");
         setIsLoading(false);
       }
     };
@@ -246,15 +264,21 @@ const App: React.FC = () => {
   }, []);
 
   const fetchVehicles = useCallback(async () => {
-    if (routeInfo.size === 0) return;
+    // We can fetch vehicles even if route info fails, but mapping types might be off.
+    // However, the original logic waited for routeInfo. Let's keep it safe but allow retry.
+    // Ideally, we want to proceed even if routeInfo is empty (vehicles will just default to BUS),
+    // but the `routeInfo.size > 0` check in useEffect prevents this.
+    // Let's rely on the initError state to block if routes fail completely.
+    if (routeInfo.size === 0 && !initError && isLoading) return; 
 
     if (isInitialLoad.current) {
       setIsLoading(true);
+    } else {
+      setIsRefreshing(true);
     }
     
     try {
-      const response = await fetchWithRetry(VEHICLES_API_URL);
-      const data: ApiResponse = await response.json();
+      const data: ApiResponse = await robustFetch(VEHICLES_API_URL);
       
       const enrichedVehicles: Vehicle[] = data.vehicles.map((v: RawVehicle) => ({
         ...v,
@@ -273,17 +297,20 @@ const App: React.FC = () => {
       if (isInitialLoad.current) {
         setIsLoading(false);
         isInitialLoad.current = false;
+      } else {
+        setIsRefreshing(false);
       }
     }
-  }, [routeInfo]);
+  }, [routeInfo, initError, isLoading]);
 
   useEffect(() => {
-    if (routeInfo.size > 0 && !initError) {
+    // Only start interval if we have route info or if we decided to proceed without it (not implemented here for simplicity)
+    if (routeInfo.size > 0) {
       fetchVehicles();
       const intervalId = setInterval(fetchVehicles, REFRESH_INTERVAL);
       return () => clearInterval(intervalId);
     }
-  }, [fetchVehicles, routeInfo.size, initError]);
+  }, [fetchVehicles, routeInfo.size]);
 
   const handleSettingsChange = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }));
@@ -348,7 +375,15 @@ const App: React.FC = () => {
           <div className="text-center md:absolute md:left-1/2 md:-translate-x-1/2">
               <h1 className="text-xl md:text-2xl font-bold">Gdańsk Transport na Żywo</h1>
               {lastUpdate && !isLoading && (
-                <p className="text-xs text-gray-600 dark:text-gray-300">Ostatnia aktualizacja: {lastUpdate}</p>
+                <div className="flex items-center justify-center gap-2">
+                  <p className="text-xs text-gray-600 dark:text-gray-300">Ostatnia aktualizacja: {lastUpdate}</p>
+                   {isRefreshing && (
+                      <svg className="animate-spin h-3 w-3 text-gray-600 dark:text-gray-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                   )}
+                </div>
               )}
             </div>
             <div className="flex items-center gap-4 text-sm md:text-base">
