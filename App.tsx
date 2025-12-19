@@ -12,6 +12,19 @@ const REFRESH_INTERVAL = 5000; // 5 seconds
 const DELAY_THRESHOLD_SECONDS = 120; // 2 minutes
 const HISTORY_WINDOW_MS = 60 * 60 * 1000; // 60 minutes
 
+// --- Helper Functions ---
+const getDistanceFromLatLonInMeters = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371; // Radius of the earth in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c * 1000; // Distance in meters
+};
+
 // --- Helper Types ---
 type IconShape = 'vehicle' | 'dot' | 'pin';
 type VehicleTypeFilter = 'ALL' | 'BUS' | 'TRAM';
@@ -35,6 +48,13 @@ interface HistoryPoint {
   lat: number;
   lon: number;
   timestamp: number;
+}
+
+interface VehicleStuckState {
+  refLat: number;
+  refLon: number;
+  stuckSince: number;
+  isHidden: boolean;
 }
 
 // --- Robust Fetching Logic ---
@@ -226,6 +246,9 @@ const App: React.FC = () => {
   const [vehicleHistory, setVehicleHistory] = useState<Map<number, HistoryPoint[]>>(new Map());
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
 
+  // Stuck vehicles state: Map<VehicleID, VehicleStuckState>
+  const vehicleStuckState = useRef<Map<number, VehicleStuckState>>(new Map());
+
   const [filters, setFilters] = useState<Filters>({
     line: '',
     type: 'ALL',
@@ -317,14 +340,81 @@ const App: React.FC = () => {
         vehicleType: routeInfo.get(v.routeShortName) || 'BUS',
       }));
 
-      setVehicles(enrichedVehicles);
+      // --- Stuck Logic Start ---
+      const now = Date.now();
+      const STUCK_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
+      const DRIFT_THRESHOLD_M = 30; // Meters to account for GPS drift when standing
+      const RESTORE_THRESHOLD_M = 100; // Meters to move to be restored
 
-      // Update History logic
+      const stuckMap = vehicleStuckState.current;
+      const currentIds = new Set<number>();
+
+      const activeVehicles = enrichedVehicles.filter(v => {
+        currentIds.add(v.vehicleId);
+        let state = stuckMap.get(v.vehicleId);
+
+        if (!state) {
+          // New vehicle or first seen
+          state = { refLat: v.lat, refLon: v.lon, stuckSince: now, isHidden: false };
+          stuckMap.set(v.vehicleId, state);
+          return true;
+        }
+
+        const dist = getDistanceFromLatLonInMeters(state.refLat, state.refLon, v.lat, v.lon);
+
+        if (state.isHidden) {
+          // Vehicle is currently hidden. Check if it moved enough to be restored.
+          if (dist >= RESTORE_THRESHOLD_M) {
+            // Restore it
+            state.isHidden = false;
+            state.refLat = v.lat;
+            state.refLon = v.lon;
+            state.stuckSince = now;
+            return true;
+          } else {
+            // Still stuck/hidden
+            return false;
+          }
+        } else {
+          // Vehicle is currently visible.
+          if (dist > DRIFT_THRESHOLD_M) {
+             // It moved significantly (more than drift). Reset timer.
+             state.refLat = v.lat;
+             state.refLon = v.lon;
+             state.stuckSince = now;
+             return true;
+          } else {
+            // It is within drift threshold (standing in place).
+            // Check how long it has been here.
+            if (now - state.stuckSince > STUCK_THRESHOLD_MS) {
+              // It has been standing too long. Hide it.
+              state.isHidden = true;
+              return false;
+            } else {
+              // Still standing but under 20 mins. Keep visible.
+              return true;
+            }
+          }
+        }
+      });
+
+      // Simple cleanup for ids not in current response
+      // We only clean up if we haven't seen them in a while, but for now
+      // let's just clean up IDs that are completely gone from API to avoid memory leak
+      for (const id of stuckMap.keys()) {
+        if (!currentIds.has(id)) {
+            stuckMap.delete(id);
+        }
+      }
+      // --- Stuck Logic End ---
+
+      setVehicles(activeVehicles);
+
+      // Update History logic with filtered vehicles
       setVehicleHistory(prevHistory => {
         const newHistory = new Map(prevHistory);
-        const now = Date.now();
         
-        enrichedVehicles.forEach(v => {
+        activeVehicles.forEach(v => {
           const points = newHistory.get(v.vehicleId) || [];
           const lastPoint = points[points.length - 1];
 
@@ -337,10 +427,6 @@ const App: React.FC = () => {
              newHistory.set(v.vehicleId, updatedPoints);
           }
         });
-
-        // Optional: Cleanup history for vehicles no longer present in API could be done here,
-        // but keeping them allows seeing history if they briefly disconnect.
-        // We could run a periodic cleanup for very old keys.
         
         return newHistory;
       });
@@ -396,7 +482,9 @@ const App: React.FC = () => {
       .filter(l => l !== '');
       
     const now = Date.now();
-    const MAX_DATA_AGE_MS = 5 * 60 * 1000; // 5 minutes
+    // Relaxed stale data check to avoid conflict with "stuck for 20 mins" logic
+    // We allow data up to 25 mins old, so the stuck logic (20 mins) takes precedence for hiding.
+    const MAX_DATA_AGE_MS = 25 * 60 * 1000; 
 
     return vehicles
       .filter(v => {
