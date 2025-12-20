@@ -14,11 +14,13 @@ This project is an interactive map that displays the live positions of public tr
 
 - **Live Vehicle Tracking**: Displays the real-time location of all active buses and trams on an interactive map.
 - **Real-time Data**: Vehicle positions are automatically refreshed every 5 seconds.
-- **Detailed Vehicle Information**: Click on any vehicle to see a popup with details such as:
+- **Modern Detail Panel**: Click on any vehicle to see a **sleek detail panel** in the bottom-left corner with:
   - Line number and destination
   - Vehicle code
   - Current speed
   - Delay status (on-time, delayed, or ahead of schedule).
+- **Route Tracing**: When a vehicle is selected, its path history for the current session is drawn on the map as a trace line.
+- **Smart "Ghost" Filtering**: Vehicles that have been stationary for more than 20 minutes (e.g., end of shift, GPS errors) are automatically hidden until they move at least 100 meters, keeping the map clean.
 - **Advanced Filtering**: A powerful filter panel allows you to:
   - **Filter by Line**: Show only specific line numbers (e.g., `115, 9, N1`).
   - **Filter by Vehicle Type**: View all vehicles, only buses, or only trams.
@@ -40,7 +42,7 @@ This project is an interactive map that displays the live positions of public tr
 - **Mapping**: Leaflet & React-Leaflet
 - **Styling**: Tailwind CSS
 - **Data Source**: [Gdańsk Open Data API](https://ckan.multimediagdansk.pl/)
-- **CORS Proxy**: The app uses `api.allorigins.win` to bypass browser CORS limitations when fetching data from the public API.
+- **CORS Proxy**: The app uses `api.allorigins.win` and `corsproxy.io` to bypass browser CORS limitations when fetching data from the public API.
 
 ---
 
@@ -54,11 +56,13 @@ This project is an interactive map that displays the live positions of public tr
 
 - **Śledzenie Pojazdów na Żywo**: Wyświetla w czasie rzeczywistym pozycje wszystkich aktywnych autobusów i tramwajów na interaktywnej mapie.
 - **Dane w Czasie Rzeczywistym**: Pozycje pojazdów są automatycznie odświeżane co 5 sekund.
-- **Szczegółowe Informacje o Pojazdach**: Kliknij na dowolny pojazd, aby zobaczyć dymek z informacjami, takimi jak:
+- **Nowoczesny Panel Szczegółów**: Kliknij na dowolny pojazd, aby zobaczyć **elegancki panel** w lewym dolnym rogu ekranu z informacjami takimi jak:
   - Numer linii i kierunek
   - Numer taborowy pojazdu
   - Aktualna prędkość
   - Status punktualności (punktualnie, opóźniony lub przyspieszony).
+- **Ślad Trasy**: Po wybraniu pojazdu, na mapie rysowana jest linia pokazująca jego przebytą trasę w trakcie bieżącej sesji.
+- **Inteligentne Filtrowanie "Duchów"**: Pojazdy, które stoją w miejscu dłużej niż 20 minut (np. koniec zmiany, błąd GPS), są automatycznie ukrywane, dopóki nie ruszą w dalszą trasę (przesunięcie o min. 100m).
 - **Zaawansowane Filtrowanie**: Rozbudowany panel filtrowania pozwala na:
   - **Filtrowanie po Linii**: Wyświetlaj tylko wybrane numery linii (np. `115, 9, N1`).
   - **Filtrowanie po Typie Pojazdu**: Zobacz wszystkie pojazdy, tylko autobusy lub tylko tramwaje.
@@ -80,4 +84,4 @@ This project is an interactive map that displays the live positions of public tr
 - **Mapa**: Leaflet & React-Leaflet
 - **Style**: Tailwind CSS
 - **Źródło Danych**: [Otwarty Gdańsk API](https://ckan.multimediagdansk.pl/)
-- **Proxy CORS**: Aplikacja wykorzystuje `api.allorigins.win` do ominięcia ograniczeń CORS w przeglądarkach podczas pobierania danych z publicznego API.
+- **Proxy CORS**: Aplikacja wykorzystuje `api.allorigins.win` oraz `corsproxy.io` do ominięcia ograniczeń CORS w przeglądarkach podczas pobierania danych z publicznego API.
