@@ -7,7 +7,7 @@ export interface Vehicle {
   speed: number;
   lat: number;
   lon: number;
-  bearing: number;
+  direction: number;
   delay: number;
   generated: string;
 }
@@ -20,7 +20,7 @@ export interface RawVehicle {
   speed: number;
   lat: number;
   lon: number;
-  bearing: number;
+  direction: number;
   delay: number;
   generated: string;
 }

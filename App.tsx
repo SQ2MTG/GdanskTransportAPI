@@ -6,7 +6,7 @@ import { Vehicle, RoutesApiResponse, RawVehicle, ApiResponse } from './types';
 // Raw API URLs
 const VEHICLES_API_URL = 'https://ckan2.multimediagdansk.pl/gpsPositions?v=2';
 
-const GDANSK_CENTER: L.LatLngExpression = [54.372158, 18.638306];
+const GDANSK_CENTER: L.LatLngExpression = [54.42084882863627, 18.58369075401717];
 const REFRESH_INTERVAL = 5000; // 5 seconds
 const DELAY_THRESHOLD_SECONDS = 120; // 2 minutes
 const HISTORY_WINDOW_MS = 60 * 60 * 1000; // 60 minutes
@@ -112,14 +112,15 @@ interface VehicleMarkerProps {
   onSelect: (id: number) => void;
 }
 
-const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape, iconSizeScale, onSelect }) => {
+const VehicleMarker = React.memo(({ vehicle, color, iconShape, iconSizeScale, onSelect }: VehicleMarkerProps) => {
   const icon = useMemo(() => {
     const isTram = vehicle.vehicleType === 'TRAM';
     let svg: string;
     let iconSize: [number, number];
     const scale = iconSizeScale / 100;
 
-    const shadowFilter = `filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5));`;
+    // Removed the slow drop-shadow filter for performance
+    const shadowFilter = ``;
 
     switch (iconShape) {
       case 'dot':
@@ -160,8 +161,10 @@ const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape
         break;
     }
 
+    const rotation = iconShape === 'vehicle' ? (vehicle.direction || 0) : 0;
+    
     const iconHtml = `
-      <div style="transform-origin: center; transform: rotate(${vehicle.bearing}deg); transition: transform 0.5s linear;">
+      <div style="transform-origin: center; transform: rotate(${rotation}deg); transition: transform 0.5s linear;">
         ${svg}
       </div>
     `;
@@ -173,26 +176,55 @@ const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape
       iconAnchor: [iconSize[0] / 2, iconSize[1] / 2],
       popupAnchor: [0, -iconSize[1] / 2],
     });
-  }, [vehicle.bearing, vehicle.vehicleType, color, iconShape, vehicle.routeShortName, iconSizeScale]);
+  }, [vehicle.direction, vehicle.vehicleType, color, iconShape, vehicle.routeShortName, iconSizeScale]);
 
   return (
     <Marker 
       position={[vehicle.lat, vehicle.lon]} 
       icon={icon}
       eventHandlers={{
-        click: (e) => {
-          L.DomEvent.stopPropagation(e.originalEvent);
+        click: () => {
           onSelect(vehicle.vehicleId);
         }
       }}
     />
   );
-};
+}, (prevProps, nextProps) => {
+  return prevProps.vehicle.lat === nextProps.vehicle.lat &&
+         prevProps.vehicle.lon === nextProps.vehicle.lon &&
+         prevProps.vehicle.direction === nextProps.vehicle.direction &&
+         prevProps.color === nextProps.color &&
+         prevProps.iconShape === nextProps.iconShape &&
+         prevProps.iconSizeScale === nextProps.iconSizeScale;
+});
 
 const MapClickHandler = ({ onMapClick }: { onMapClick: () => void }) => {
-  useMapEvents({
+  const map = useMapEvents({
     click: () => onMapClick(),
   });
+  
+  useEffect(() => {
+    // Invalidate size after a short delay to ensure container is fully rendered
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 100);
+
+    // Also observe the map container for size changes
+    const container = map.getContainer();
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    
+    if (container) {
+      resizeObserver.observe(container);
+    }
+
+    return () => {
+      clearTimeout(timer);
+      resizeObserver.disconnect();
+    };
+  }, [map]);
+
   return null;
 };
 
@@ -291,7 +323,7 @@ const App: React.FC = () => {
 
   // History state: Map<VehicleID, Array of Points>
   const [vehicleHistory, setVehicleHistory] = useState<Map<number, HistoryPoint[]>>(new Map());
-  const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<any>(null);
 
   // Stuck vehicles state: Map<VehicleID, VehicleStuckState>
   const vehicleStuckState = useRef<Map<number, VehicleStuckState>>(new Map());
@@ -358,6 +390,10 @@ const App: React.FC = () => {
     try {
       const data: ApiResponse = await robustFetch(VEHICLES_API_URL);
       
+      if (!data || !Array.isArray(data.vehicles)) {
+        throw new Error("Nieprawidłowy format danych z API");
+      }
+
       const enrichedVehicles: Vehicle[] = data.vehicles.map((v: RawVehicle) => {
         const isTram = /^\d{1,2}$/.test(v.routeShortName);
         return {
@@ -534,7 +570,7 @@ const App: React.FC = () => {
   const busCount = useMemo(() => filteredVehicles.filter(v => v.vehicleType === 'BUS').length, [filteredVehicles]);
 
   const selectedVehicle = useMemo(() => {
-     return vehicles.find(v => v.vehicleId === selectedVehicleId);
+     return vehicles.find(v => String(v.vehicleId) === String(selectedVehicleId));
   }, [vehicles, selectedVehicleId]);
 
   const FilterButton = ({
@@ -561,7 +597,7 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="relative h-screen w-screen bg-white dark:bg-gray-900">
+    <div className="relative h-screen w-screen bg-white dark:bg-gray-900" style={{ height: '100vh', width: '100vw' }}>
       <header className="absolute top-0 left-0 right-0 z-[1000] p-4 bg-white/80 dark:bg-black/70 backdrop-blur-sm text-gray-800 dark:text-white shadow-lg flex flex-col gap-2">
         <div className="relative flex justify-center items-center flex-wrap gap-2 md:justify-end">
           <div className="text-center md:absolute md:left-1/2 md:-translate-x-1/2">
@@ -718,18 +754,19 @@ const App: React.FC = () => {
         />
       )}
 
-      <MapContainer center={GDANSK_CENTER} zoom={12} scrollWheelZoom={true}>
+      <MapContainer center={GDANSK_CENTER} zoom={12} scrollWheelZoom={true} preferCanvas={true}>
         <MapClickHandler onMapClick={() => setSelectedVehicleId(null)} />
 
         {settings.isDarkMode ? (
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            attribution='&copy; Google Maps'
+            url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+            className="map-tiles-dark"
           />
         ) : (
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; Google Maps'
+            url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
           />
         )}
         
