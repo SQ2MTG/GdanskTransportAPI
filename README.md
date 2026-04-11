@@ -8,7 +8,7 @@ This project is an interactive map that displays the live positions of public tr
 
 ### 🚀 Live Demo
 
-**(Link to the live application would be here)**
+**https://gdansk.tojest.dev**
 
 ### ✨ Key Features
 
@@ -52,7 +52,7 @@ This project is an interactive map that displays the live positions of public tr
 
 ### 🚀 Demo na Żywo
 
-**(Tutaj znajdowałby się link do działającej aplikacji)**
+**https://gdansk.tojest.dev**
 
 ### ✨ Kluczowe Funkcjonalności
 
