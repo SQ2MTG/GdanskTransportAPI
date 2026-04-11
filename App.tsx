@@ -5,7 +5,6 @@ import { Vehicle, RoutesApiResponse, RawVehicle, ApiResponse } from './types';
 
 // Raw API URLs
 const VEHICLES_API_URL = 'https://ckan2.multimediagdansk.pl/gpsPositions?v=2';
-const ROUTES_API_URL = 'https://ckan.multimediagdansk.pl/dataset/c24aa637-3619-4dc2-a171-a23eec8f2172/resource/22313c56-5acf-41c7-a5fd-dc5dc72b3851/download/routes.json';
 
 const GDANSK_CENTER: L.LatLngExpression = [54.372158, 18.638306];
 const REFRESH_INTERVAL = 5000; // 5 seconds
@@ -36,6 +35,7 @@ interface Settings {
   busIconShape: IconShape;
   tramIconShape: IconShape;
   isDarkMode: boolean;
+  iconSizeScale: number;
 }
 
 interface Filters {
@@ -108,52 +108,54 @@ interface VehicleMarkerProps {
   vehicle: Vehicle;
   color: string;
   iconShape: IconShape;
+  iconSizeScale: number;
   onSelect: (id: number) => void;
 }
 
-const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape, onSelect }) => {
+const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape, iconSizeScale, onSelect }) => {
   const icon = useMemo(() => {
     const isTram = vehicle.vehicleType === 'TRAM';
     let svg: string;
-    let iconSize: L.PointExpression;
+    let iconSize: [number, number];
+    const scale = iconSizeScale / 100;
 
     const shadowFilter = `filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5));`;
 
     switch (iconShape) {
       case 'dot':
         const line = vehicle.routeShortName;
-        const fontSize = line.length > 2 ? '10px' : line.length > 1 ? '12px' : '14px';
-        svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" width="26" height="26" style="${shadowFilter}">
+        const fontSize = line.length > 2 ? '10' : line.length > 1 ? '12' : '14';
+        svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" width="${26 * scale}" height="${26 * scale}" style="${shadowFilter}">
             <circle cx="12" cy="12" r="11" stroke="white" stroke-width="1.5" />
             <text x="12" y="12" dominant-baseline="central" text-anchor="middle" fill="white" font-size="${fontSize}" font-weight="bold" font-family="sans-serif">
               ${line}
             </text>
           </svg>`;
-        iconSize = [26, 26];
+        iconSize = [26 * scale, 26 * scale];
         break;
       
       case 'pin':
-        svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" width="30" height="30" style="${shadowFilter}">
+        svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" width="${30 * scale}" height="${30 * scale}" style="${shadowFilter}">
             <path d="M12 0C7.589 0 4 3.589 4 8c0 4.411 8 16 8 16s8-11.589 8-16c0-4.411-3.589-8-8-8zm0 12c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/>
           </svg>`;
-        iconSize = [30, 30];
+        iconSize = [30 * scale, 30 * scale];
         break;
 
       case 'vehicle':
       default:
         if (isTram) {
-          svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 12" fill="${color}" width="40" height="12" style="${shadowFilter}">
+          svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 12" fill="${color}" width="${40 * scale}" height="${12 * scale}" style="${shadowFilter}">
               <rect x="0" y="0" width="19" height="12" rx="3" />
               <rect x="21" y="0" width="19" height="12" rx="3" />
               <rect x="18" y="4" width="4" height="4" fill="rgba(0,0,0,0.4)" rx="1"/>
             </svg>`;
-          iconSize = [40, 12];
+          iconSize = [40 * scale, 12 * scale];
         } else {
-          svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 14" fill="${color}" width="30" height="14" style="${shadowFilter}">
+          svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 14" fill="${color}" width="${30 * scale}" height="${14 * scale}" style="${shadowFilter}">
               <rect x="0" y="0" width="30" height="14" rx="3" />
               <rect x="3" y="2" width="24" height="10" fill="rgba(255,255,255,0.4)" rx="2" />
             </svg>`;
-          iconSize = [30, 14];
+          iconSize = [30 * scale, 14 * scale];
         }
         break;
     }
@@ -171,7 +173,7 @@ const VehicleMarker: React.FC<VehicleMarkerProps> = ({ vehicle, color, iconShape
       iconAnchor: [iconSize[0] / 2, iconSize[1] / 2],
       popupAnchor: [0, -iconSize[1] / 2],
     });
-  }, [vehicle.bearing, vehicle.vehicleType, color, iconShape, vehicle.routeShortName]);
+  }, [vehicle.bearing, vehicle.vehicleType, color, iconShape, vehicle.routeShortName, iconSizeScale]);
 
   return (
     <Marker 
@@ -280,7 +282,6 @@ const VehicleDetailPanel: React.FC<{ vehicle: Vehicle; onClose: () => void; sett
 
 const App: React.FC = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [routeInfo, setRouteInfo] = useState<Map<string, 'BUS' | 'TRAM'>>(new Map());
   const [lastUpdate, setLastUpdate] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -307,6 +308,7 @@ const App: React.FC = () => {
     busIconShape: 'dot',
     tramIconShape: 'dot',
     isDarkMode: window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches,
+    iconSizeScale: 100,
   };
 
   const loadSettings = (): Settings => {
@@ -316,6 +318,9 @@ const App: React.FC = () => {
         const parsed = JSON.parse(savedSettings);
         if (typeof parsed.isDarkMode !== 'boolean') {
           parsed.isDarkMode = defaultSettings.isDarkMode;
+        }
+        if (typeof parsed.iconSizeScale !== 'number') {
+          parsed.iconSizeScale = defaultSettings.iconSizeScale;
         }
         return { ...defaultSettings, ...parsed };
       }
@@ -343,35 +348,7 @@ const App: React.FC = () => {
     }
   }, [settings]);
 
-  useEffect(() => {
-    const fetchRouteInfo = async () => {
-      try {
-        const data: RoutesApiResponse = await robustFetch(ROUTES_API_URL);
-        const routes = Object.values(data)[0]?.routes;
-        if (!routes) throw new Error("Nieprawidłowy format danych o liniach.");
-
-        const newRouteInfo = new Map<string, 'BUS' | 'TRAM'>();
-        for (const route of routes) {
-           if (route && route.routeShortName) {
-            const isTram = /^\d{1,2}$/.test(route.routeShortName);
-            const vehicleType = isTram ? 'TRAM' : 'BUS';
-            newRouteInfo.set(route.routeShortName, vehicleType);
-          }
-        }
-        setRouteInfo(newRouteInfo);
-      } catch (error) {
-        console.error("Błąd krytyczny podczas pobierania informacji o liniach:", error);
-        setInitError("Nie można załadować kluczowych informacji o liniach. Sprawdź połączenie.");
-        setIsLoading(false);
-      }
-    };
-    fetchRouteInfo();
-  }, []);
-
   const fetchVehicles = useCallback(async () => {
-    // We can fetch vehicles even if route info fails, but mapping types might be off.
-    if (routeInfo.size === 0 && !initError && isLoading) return; 
-
     if (isInitialLoad.current) {
       setIsLoading(true);
     } else {
@@ -381,10 +358,13 @@ const App: React.FC = () => {
     try {
       const data: ApiResponse = await robustFetch(VEHICLES_API_URL);
       
-      const enrichedVehicles: Vehicle[] = data.vehicles.map((v: RawVehicle) => ({
-        ...v,
-        vehicleType: routeInfo.get(v.routeShortName) || 'BUS',
-      }));
+      const enrichedVehicles: Vehicle[] = data.vehicles.map((v: RawVehicle) => {
+        const isTram = /^\d{1,2}$/.test(v.routeShortName);
+        return {
+          ...v,
+          vehicleType: isTram ? 'TRAM' : 'BUS',
+        };
+      });
 
       // --- Stuck Logic Start ---
       const now = Date.now();
@@ -493,15 +473,13 @@ const App: React.FC = () => {
         setIsRefreshing(false);
       }
     }
-  }, [routeInfo, initError, isLoading]);
+  }, [initError, isLoading]);
 
   useEffect(() => {
-    if (routeInfo.size > 0) {
-      fetchVehicles();
-      const intervalId = setInterval(fetchVehicles, REFRESH_INTERVAL);
-      return () => clearInterval(intervalId);
-    }
-  }, [fetchVehicles, routeInfo.size]);
+    fetchVehicles();
+    const intervalId = setInterval(fetchVehicles, REFRESH_INTERVAL);
+    return () => clearInterval(intervalId);
+  }, [fetchVehicles]);
 
   const handleSettingsChange = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }));
@@ -693,6 +671,20 @@ const App: React.FC = () => {
                   <option value="pin">Pinezka</option>
                 </select>
               </div>
+              <div className="border-l border-gray-400 dark:border-gray-600 h-8 mx-2"></div>
+              <div className="flex items-center gap-2">
+                <label htmlFor="iconSizeScale">Rozmiar ikon ({settings.iconSizeScale}%):</label>
+                <input 
+                  type="range" 
+                  id="iconSizeScale" 
+                  min="50" 
+                  max="200" 
+                  step="10"
+                  value={settings.iconSizeScale} 
+                  onChange={(e) => handleSettingsChange('iconSizeScale', parseInt(e.target.value, 10))} 
+                  className="w-24 accent-blue-600" 
+                />
+              </div>
            </div>
         )}
       </header>
@@ -757,6 +749,7 @@ const App: React.FC = () => {
               vehicle={vehicle}
               color={isTram ? settings.tramColor : settings.busColor}
               iconShape={isTram ? settings.tramIconShape : settings.busIconShape}
+              iconSizeScale={settings.iconSizeScale}
               onSelect={handleVehicleSelect}
             />
           );
