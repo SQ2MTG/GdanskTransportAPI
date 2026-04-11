@@ -31,10 +31,12 @@ This project is an interactive map that displays the live positions of public tr
     - `Dot`: A clean circle with the line number inside (great for readability).
     - `Vehicle`: A shape representing a bus or a tram.
     - `Pin`: A classic map pin.
+  - **Icon Scaling**: Adjust the size of vehicle icons from 50% to 200% using a convenient slider.
 - **Dark Mode**: A fully-featured dark mode for comfortable viewing in low-light conditions. The theme toggle affects all UI elements, including the map tiles.
 - **Responsive Design**: The interface is optimized for both desktop and mobile devices.
-- **Persistent Settings**: Your preferences for colors, icons, and theme are automatically saved in your browser's local storage.
+- **Persistent Settings**: Your preferences for colors, icons, scale, and theme are automatically saved in your browser's local storage.
 - **Smart Error Handling**: Displays user-friendly notifications in case of API connection issues or data loading failures.
+- **Optimized Performance**: Vehicle types (bus vs. tram) are determined instantly using smart line number detection, eliminating the need to download heavy route databases and ensuring lightning-fast initial load times.
 
 ### 🛠️ Technology Stack
 
@@ -73,10 +75,12 @@ This project is an interactive map that displays the live positions of public tr
     - `Kropka`: Czytelne kółko z numerem linii w środku.
     - `Pojazd`: Kształt przypominający autobus lub tramwaj.
     - `Pinezka`: Klasyczna pinezka mapowa.
+  - **Skalowanie Ikon**: Dostosuj rozmiar ikon pojazdów w zakresie od 50% do 200% za pomocą wygodnego suwaka.
 - **Tryb Ciemny**: W pełni funkcjonalny tryb ciemny dla komfortowego użytkowania przy słabym oświetleniu. Przełącznik motywu wpływa na wszystkie elementy interfejsu, łącznie z kafelkami mapy.
 - **Responsywny Design**: Interfejs został zoptymalizowany do działania na komputerach i urządzeniach mobilnych.
-- **Zapamiętywanie Ustawień**: Twoje preferencje dotyczące kolorów, ikon i motywu są automatycznie zapisywane w pamięci lokalnej przeglądarki.
+- **Zapamiętywanie Ustawień**: Twoje preferencje dotyczące kolorów, ikon, skali i motywu są automatycznie zapisywane w pamięci lokalnej przeglądarki.
 - **Inteligentna Obsługa Błędów**: Aplikacja wyświetla przyjazne dla użytkownika powiadomienia w przypadku problemów z połączeniem API lub błędów ładowania danych.
+- **Zoptymalizowana Wydajność**: Typy pojazdów (autobus vs tramwaj) są określane natychmiastowo za pomocą inteligentnego wykrywania numerów linii, eliminując potrzebę pobierania ciężkich baz danych tras i zapewniając błyskawiczne ładowanie początkowe mapy.
 
 ### 🛠️ Stos Technologiczny
 
